@@ -1,7 +1,7 @@
-import { env } from '$env/dynamic/public';
-import toast from 'svelte-french-toast';
+import { PUBLIC_API_BASE_URL } from '$env/static/public';
+import { showToast } from '$lib/utils/toast';
 
-const BASE_URL = env.PUBLIC_API_BASE_URL || 'http://localhost:3000';
+const BASE_URL = PUBLIC_API_BASE_URL;
 
 export class ApiError extends Error {
     constructor(public status: number, public details: any) {
@@ -29,22 +29,22 @@ async function request<T>(endpoint: string, options: RequestInit = {}): Promise<
 
         return data as T;
     } catch (error) {
-        // Network errors or other crashes
+        // Network errors
         if (error instanceof TypeError && error.message === 'Failed to fetch') {
-            toast.error('Unable to connect to the server. Is it running?');
+            showToast('Unable to connect to the server. Is it running?', 'error');
             throw new Error('Network Error');
         }
 
         // API Errors (400/500)
         if (error instanceof ApiError) {
-            // If the backend sends { error: "Message" } use that, else default
+            // Use backend error message if available
             const msg = error.details?.error || 'Something went wrong';
-            toast.error(msg);
+            showToast(msg, 'error');
             throw error;
         }
 
         console.error(error);
-        toast.error('An unexpected error occurred');
+        showToast('An unexpected error occurred', 'error');
         throw error;
     }
 }

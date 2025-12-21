@@ -70,9 +70,12 @@ In a new terminal:
 ```bash
 cd  frontend
 pnpm  install
+
+# IMPORTANT: Ensure your .env files are verified as UTF-8 encoding.
+# SvelteKit/Vite may fail to read it otherwise.
+
 pnpm  dev
 ```
-
 Visit **http://localhost:5173** to chat.  
 
 ---

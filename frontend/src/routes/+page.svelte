@@ -2,9 +2,10 @@
   import { onMount, tick } from 'svelte';
   import { api, ApiError } from '$lib/api';
   import toast, { Toaster } from 'svelte-french-toast';
-  import { Send, Bot, User, Loader2, Palette } from 'lucide-svelte';
+  import { X, Send, Bot, User, Loader2, Palette, Plus } from 'lucide-svelte';
   import { fade, fly } from 'svelte/transition';
   import { theme, themes } from '$lib/theme.svelte';
+  import { showToast } from '$lib/utils/toast';
 
   let messages: { id: string; role: 'user' | 'ai'; content: string }[] = [];
   let input = '';
@@ -13,44 +14,65 @@
   let viewport: HTMLDivElement;
   let inputElement: HTMLInputElement;
   let showThemes = false;
+  let isOnline = false; // Start offline, wait for health check
+  let lastErrorTime = 0;
 
   $: currentTheme = themes[$theme];
 
   onMount(async () => {
-    let stored = sessionStorage.getItem('spur_session_id');
-    if (!stored) {
-      stored = crypto.randomUUID();
-      sessionStorage.setItem('spur_session_id', stored);
-    }
-    sessionId = stored;
-
-   // Persist theme (localStorage preference)
-   const storedTheme = localStorage.getItem('spur_theme');
+   // Initial health check
+   checkHealth();
+   
+   // Persist theme
+   const storedTheme = sessionStorage.getItem('spur_theme');
    if (storedTheme && Object.keys(themes).includes(storedTheme)) {
        theme.set(storedTheme as any);
    }
 
-   theme.subscribe(v => localStorage.setItem('spur_theme', v));
+   theme.subscribe(v => sessionStorage.setItem('spur_theme', v));
 
-   // Load History
-   try {
-       const res = await api.get<{ messages: any[] }>('/chat/history/' + sessionId);
-       if (res.messages && res.messages.length > 0) {
-           // API returns newest first, reverse for display
-           messages = res.messages.reverse().map(m => ({
-               id: m.id,
-               role: m.role === 'model' ? 'ai' : m.role, // normalize role
-               content: m.content
-           }));
-           scrollToBottom();
+   // Session Management
+   let stored = sessionStorage.getItem('spur_session_id');
+   
+   if (stored) {
+       sessionId = stored;
+       // Fetch history if session existed
+       try {
+           const res = await api.get<{ messages: any[] }>('/chat/history/' + sessionId);
+           if (res.messages && res.messages.length > 0) {
+               // API returns newest first, reverse for display
+               messages = res.messages.reverse().map(m => ({
+                   id: m.id,
+                   role: m.role === 'model' ? 'ai' : m.role, // normalize role
+                   content: m.content
+               }));
+               scrollToBottom();
+           }
+       } catch (err) {
+           console.error("Failed to load history", err);
+           // If history load fails, likely offline
+           isOnline = false;
        }
-   } catch (err) {
-       console.error("Failed to load history", err);
    }
 
    // Auto-focus input on load
    if (inputElement) inputElement.focus();
   });
+
+  async function checkHealth(silentSuccess = false, reportFailure = false) {
+      try {
+          await api.get('/');
+          if (!isOnline && !silentSuccess) {
+              showToast('Support is Online', 'success');
+          }
+          isOnline = true;
+      } catch (e) {
+          isOnline = false;
+          if (reportFailure) {
+              showToast('Connection Failed', 'error');
+          }
+      }
+  }
 
   async function scrollToBottom() {
     await tick();
@@ -59,8 +81,28 @@
     }
   }
 
+  function startNewChat() {
+      checkHealth(true, true); // Silent success, report failure
+      sessionId = '';
+      sessionStorage.removeItem('spur_session_id');
+      messages = [];
+      input = '';
+      if (inputElement) inputElement.focus();
+      showToast('New chat created');
+  }
+
   async function sendMessage() {
     if (!input.trim() || loading || input.length > 250) return;
+    
+    // Check connection first
+    if (!isOnline) {
+        // Prevent spam: only show error every 2 seconds
+        if (Date.now() - lastErrorTime > 2000) {
+            lastErrorTime = Date.now();
+            checkHealth(true, true); // Try to reconnect, show error on fail
+        }
+        return;
+    }
 
     const text = input.trim();
     input = '';
@@ -73,22 +115,35 @@
     loading = true;
 
     try {
-      const res = await api.post<{ reply: string }>('/chat/message', {
-        message: text,
-        sessionId
-      });
+      const payload: any = { message: text };
+      if (sessionId) payload.sessionId = sessionId;
+
+      const res = await api.post<{ reply: string; sessionId: string }>('/chat/message', payload);
+
+      // Update session if it was new
+      if (!sessionId && res.sessionId) {
+          sessionId = res.sessionId;
+          sessionStorage.setItem('spur_session_id', sessionId);
+      }
 
       messages = [...messages, { 
         id: crypto.randomUUID(), 
         role: 'ai', 
         content: res.reply 
       }];
+      
+      isOnline = true; // Request succeeded
 
     } catch (err) {
-       // If limit reached, we could show a special message in chat?
-       // For now, toast handles it.
+       // Handle API errors
         if (err instanceof ApiError && err.status === 403) {
             // Optional: disable input
+        } else {
+            isOnline = false; // API failed, likely offline
+            if (Date.now() - lastErrorTime > 2000) {
+                 checkHealth(true, true); 
+                 lastErrorTime = Date.now();
+            }
         }
     } finally {
       loading = false;
@@ -107,7 +162,7 @@
   }
 </script>
 
-<Toaster position="top-center" />
+<Toaster position="top-center" toastOptions={{ duration: 3000 }} />
 
 <div class="flex flex-col h-screen font-sans transition-colors duration-300 {currentTheme.bg} {currentTheme.text}">
   <!-- Header -->
@@ -120,15 +175,26 @@
             <h1 class="font-bold text-lg tracking-tight">Spur Support</h1>
             <div class="flex items-center gap-1.5 opacity-60">
                 <span class="relative flex h-2 w-2">
-                  <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
-                  <span class="relative inline-flex rounded-full h-2 w-2 bg-green-500"></span>
+                  <span class="{isOnline ? 'animate-ping bg-green-400' : 'bg-gray-400'} absolute inline-flex h-full w-full rounded-full opacity-75"></span>
+                  <span class="relative inline-flex rounded-full h-2 w-2 {isOnline ? 'bg-green-500' : 'bg-gray-500'}"></span>
                 </span>
-                <p class="text-xs font-medium">Online</p>
+                <p class="text-xs font-medium">{isOnline ? 'Online' : 'Offline'}</p>
             </div>
         </div>
     </div>
     
-    <div class="relative">
+    <div class="relative flex items-center gap-2">
+        <button 
+            type="button"
+            class="flex items-center gap-2 p-2.5 sm:px-3 sm:py-2 rounded-xl text-sm font-medium hover:bg-black/5 active:scale-95 transition-all duration-200"
+            on:click={startNewChat}
+            disabled={loading}
+            aria-label="New Chat"
+        >
+            <Plus class="w-5 h-5 sm:w-4 sm:h-4 opacity-70" />
+            <span class="hidden sm:inline">New Chat</span>
+        </button>
+
         <button 
             type="button"
             class="p-2.5 rounded-xl hover:bg-black/5 active:scale-95 transition-all duration-200"
@@ -225,6 +291,8 @@
     <div class="max-w-4xl mx-auto relative flex gap-2">
       <div class="relative flex-1">
           <input
+            id="chat-input"
+            name="chat-input"
             bind:this={inputElement}
             bind:value={input}
             on:keydown={handleKeydown}

@@ -3,19 +3,24 @@ import { z } from "zod";
 import { generateReply } from "../services/llm";
 import { PrismaClient } from "@prisma/client";
 import Redis from "ioredis";
+import { randomUUID } from "crypto";
 
 const prisma = new PrismaClient();
 const redis = new Redis(process.env.REDIS_URL || "redis://localhost:6379");
 
 const ChatMessageSchema = z.object({
     message: z.string().min(1).max(250),
-    sessionId: z.string().uuid(),
+    sessionId: z.uuid().optional(),
 });
 
 export async function chatRoutes(fastify: FastifyInstance) {
     fastify.post("/message", async (request, reply) => {
         try {
-            const { message, sessionId } = ChatMessageSchema.parse(request.body);
+            let { message, sessionId } = ChatMessageSchema.parse(request.body);
+
+            if (!sessionId) {
+                sessionId = randomUUID();
+            }
 
             // Check Limits (100 messages max)
             const count = await prisma.message.count({ where: { sessionId } });
