@@ -72,11 +72,14 @@ export async function chatRoutes(fastify: FastifyInstance) {
             // 6. Persist AI Message
             await prisma.message.create({
                 data: {
-                    content: aiResponseText,
+                    content: aiResponseText || "Sorry, I couldn't generate a response.",
                     role: "ai",
                     sessionId: sessionId,
                 },
             });
+
+            // Invalidate the history cache so the next fetch (e.g. reload) gets fresh data
+            await redis.del(`chat_history:${sessionId}`);
 
             return { reply: aiResponseText, sessionId };
 

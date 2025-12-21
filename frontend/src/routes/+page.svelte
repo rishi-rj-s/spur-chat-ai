@@ -11,25 +11,45 @@
   let loading = false;
   let sessionId = '';
   let viewport: HTMLDivElement;
+  let inputElement: HTMLInputElement;
   let showThemes = false;
 
   $: currentTheme = themes[$theme];
 
-  onMount(() => {
-    let stored = localStorage.getItem('spur_session_id');
+  onMount(async () => {
+    let stored = sessionStorage.getItem('spur_session_id');
     if (!stored) {
       stored = crypto.randomUUID();
-      localStorage.setItem('spur_session_id', stored);
+      sessionStorage.setItem('spur_session_id', stored);
     }
     sessionId = stored;
 
-   // Persist theme choice
+   // Persist theme choice (keep theme in localStorage as it's a preference, not session data)
    const storedTheme = localStorage.getItem('spur_theme');
    if (storedTheme && Object.keys(themes).includes(storedTheme)) {
        theme.set(storedTheme as any);
    }
 
    theme.subscribe(v => localStorage.setItem('spur_theme', v));
+
+   // Load History
+   try {
+       const res = await api.get<{ messages: any[] }>('/chat/history/' + sessionId);
+       if (res.messages && res.messages.length > 0) {
+           // API returns newest first, so we reverse to show oldest at top
+           messages = res.messages.reverse().map(m => ({
+               id: m.id,
+               role: m.role === 'model' ? 'ai' : m.role, // normalize role
+               content: m.content
+           }));
+           scrollToBottom();
+       }
+   } catch (err) {
+       console.error("Failed to load history", err);
+   }
+
+   // Auto-focus input on load
+   if (inputElement) inputElement.focus();
   });
 
   async function scrollToBottom() {
@@ -73,6 +93,9 @@
     } finally {
       loading = false;
       scrollToBottom();
+      // Keep focus on input for rapid chatting (Svelte tick ensures DOM is ready if it was disabled)
+      await tick(); 
+      if (inputElement) inputElement.focus();
     }
   }
 
@@ -202,6 +225,7 @@
     <div class="max-w-4xl mx-auto relative flex gap-2">
       <div class="relative flex-1">
           <input
+            bind:this={inputElement}
             bind:value={input}
             on:keydown={handleKeydown}
             disabled={loading}
