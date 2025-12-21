@@ -24,7 +24,7 @@
     }
     sessionId = stored;
 
-   // Persist theme choice (keep theme in localStorage as it's a preference, not session data)
+   // Persist theme (localStorage preference)
    const storedTheme = localStorage.getItem('spur_theme');
    if (storedTheme && Object.keys(themes).includes(storedTheme)) {
        theme.set(storedTheme as any);
@@ -36,7 +36,7 @@
    try {
        const res = await api.get<{ messages: any[] }>('/chat/history/' + sessionId);
        if (res.messages && res.messages.length > 0) {
-           // API returns newest first, so we reverse to show oldest at top
+           // API returns newest first, reverse for display
            messages = res.messages.reverse().map(m => ({
                id: m.id,
                role: m.role === 'model' ? 'ai' : m.role, // normalize role
@@ -93,7 +93,7 @@
     } finally {
       loading = false;
       scrollToBottom();
-      // Keep focus on input for rapid chatting (Svelte tick ensures DOM is ready if it was disabled)
+      // Keep focus on input
       await tick(); 
       if (inputElement) inputElement.focus();
     }

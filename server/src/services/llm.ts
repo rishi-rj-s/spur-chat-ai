@@ -44,11 +44,8 @@ export async function generateReply(history: { role: "user" | "model"; parts: st
             message: newMessage
         });
 
-        // The result object from sendMessage is a GenerateContentResponse
-        // Based on new SDK, it should have a 'text' property or we need to access candidates.
-        // User example showed `response.text`. 
-        // Note: The new SDK return type might be slightly different but usually is { text: string ... }.
-        // Let's assume .text works as per user snippet.
+        // Result object usually has .text (or candidates). 
+        // We assume .text works based on usage.
         return result.text;
     } catch (error) {
         console.error("LLM Error:", error);

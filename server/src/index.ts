@@ -11,7 +11,7 @@ const server = Fastify({
 });
 
 server.register(cors, {
-    origin: "*", // allow development from any port (e.g. SvelteKit on 5173)
+    origin: "http://localhost:5173",
 });
 
 server.register(chatRoutes, { prefix: "/chat" });
