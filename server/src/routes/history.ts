@@ -6,8 +6,8 @@ import Redis from "ioredis";
 const prisma = new PrismaClient();
 
 const HistoryQuerySchema = z.object({
-    sessionId: z.string().uuid(),
-    cursor: z.string().uuid().optional(),
+    sessionId: z.uuid(),
+    cursor: z.uuid().optional(),
     limit: z.coerce.number().min(1).max(100).default(50),
 });
 
@@ -28,9 +28,7 @@ export async function historyRoutes(fastify: FastifyInstance) {
 
             const { cursor, limit } = query.data;
 
-            // Redis Cache Strategy:
-            // Only cache the "first page" (no cursor) to speed up initial loads/reloads.
-            // Pagination (with cursor) is less frequent and can hit the DB.
+            // Redis Cache (First page only)
             const cacheKey = `chat_history:${sessionId}`;
 
             if (!cursor) {
@@ -54,19 +52,13 @@ export async function historyRoutes(fastify: FastifyInstance) {
                 nextCursor = nextItem?.id;
             }
 
-            // The frontend expects oldest-first (usually) to render top-to-bottom, 
-            // BUT for strict history fetching, we usually fetch newest-first (desc).
-            // Let's send them back as is (descending), and frontend reverses them.
-
             const response = {
                 messages,
                 nextCursor
             };
 
-            // Cache the result if it's the first page
+            // First page? Cache it (30 min TTL)
             if (!cursor) {
-                // Expire cache in 60 seconds (short lived) or keep it longer but invalidate explicitly?
-                // Since we invalidate explicitly in chat.ts, we can keep it longer, e.g., 30 mins to match session
                 await redis.set(cacheKey, JSON.stringify(response), "EX", 1800);
             }
 

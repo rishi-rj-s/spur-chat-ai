@@ -1,160 +1,148 @@
 # Spur Chat Agent
 
-> A robust, production-ready customer support AI agent for live chat widgets
+> A "boring but robust" customer engagement AI agent.
 
-**Spur Chat Agent** is an AI-powered chat system that combines intelligent responses with enterprise-grade reliability. Built for real-world customer support scenarios, it prioritizes stability and user experience without sacrificing modern features.
-
----
-
-## What It Does
-
-**Intelligent Conversations** — Powered by Google Gemini with built-in domain knowledge for shipping, returns, and customer service scenarios.
-
-**Session Memory** — Redis-backed sessions maintain conversation context for 30 minutes, ensuring smooth multi-turn interactions.
-
-**Complete History** — Every message is persisted to PostgreSQL, giving you full audit trails and conversation history.
-
-**Visual Flexibility** — Three beautiful themes (Light, Dark, and Glass) that users can switch between instantly.
-
-**Battle-Tested Reliability** — Input validation with Zod, rate limiting, message caps (100 per session), character limits (250), and graceful error handling with toast notifications.
+This project is a submission for the Spur Founding Full-Stack Engineer role. It implements a resilient, production-ready chat widget powered by Google Gemini, focused on reliability and user experience over flashy, brittle features.
+  
 
 ---
+## 🚀 Quick Start  
 
-## Technology
+### Prerequisites
 
-**Frontend Stack** — SvelteKit provides the reactive UI framework, styled with TailwindCSS. Lucide Icons for crisp visuals, and Svelte French Toast for notifications.
+- Node.js 20+
 
-**Backend Stack** — Fastify powers the API layer with TypeScript throughout. Zod handles runtime validation and type safety.
+- pnpm (or npm)
 
-**Data Layer** — PostgreSQL (via Prisma ORM) stores conversations permanently. Redis (via IORedis) manages ephemeral session state.
+- Docker Desktop (optional, for easy DB setup)
 
-**AI Integration** — Google Gemini via the official `@google/generative-ai` SDK.
+- A Google Gemini API Key
+  
 
-**Development** — Docker Compose orchestrates local services. Prettier and ESLint maintain code quality.
+### 1. Database Setup
 
----
+I used **Docker** to spin up PostgreSQL and Redis locally. You can do the same, or use your own managed instances (Neon, Supabase, Upstash, etc.).  
 
-## Getting Started Locally
-
-**Before You Begin** — Install Node.js 20+, pnpm (or npm), and Docker Desktop.
-
-**Step 1: Start Your Databases**
-
-Fire up PostgreSQL and Redis in containers:
+**Option A: Using Docker (Recommended)**
 
 ```bash
-docker-compose up -d
+
+# Spins up Postgres (port 5432) and Redis (port 6379)
+
+docker-compose  up  -d
+
 ```
 
-This spins up Postgres on port 5432 and Redis on 6379.
+**Option B: Bring Your Own DB**
 
-**Step 2: Configure the Backend**
+If you aren't using Docker, just ensure you have connection strings for a Postgres database and a Redis instance ready for the next step.  
 
-Navigate to the server directory and install dependencies:
+### 2. Backend Setup
 
 ```bash
-cd server
-pnpm install
-pnpm db:pushAndGenerate
+
+cd  server
+pnpm  install  
+
+# Create .env file
+cp  .env.example  .env
+
+# OR create manually:
+
+# DATABASE_URL="postgresql://user:pass@localhost:5432/spur_chat?schema=public
+# REDIS_URL="redis://localhost:6379"
+# GEMINI_API_KEY="your_google_ai_key"
+# PORT=3000  
+
+# Push Prisma schema to DB
+pnpm  db:push
+
 ```
-
-Create `server/.env` with your configuration:
-
-```env
-DATABASE_URL="postgresql://postgres:postgres@localhost:5432/spur_chat?schema=public"
-REDIS_URL="redis://localhost:6379"
-GEMINI_API_KEY="YOUR_GEMINI_KEY"
-PORT=3000
-```
-
-Launch the backend server:
+Start the server:
 
 ```bash
-pnpm dev
+pnpm  dev
 ```
 
-**Step 3: Launch the Frontend**
+### 3. Frontend Setup
 
-In a new terminal, set up the UI:
-
+In a new terminal:
 ```bash
-cd frontend
-pnpm install
-pnpm dev
+cd  frontend
+pnpm  install
+pnpm  dev
 ```
 
-Visit **http://localhost:5173** to see your chat agent in action.
+Visit **http://localhost:5173** to chat.  
 
 ---
 
-## How It's Built
+## 🧠 Architecture & Design Decisions
 
-**Project Structure** — The monorepo contains separate `frontend` and `server` directories, keeping concerns cleanly separated while allowing shared tooling.
+My design philosophy for this task was **"Robustness First."** I wanted to build something that wouldn't crash on weird input and felt fast even on slow networks.
 
-**Backend Architecture** — The `routes/` directory exposes API endpoints like `/chat/message`. Business logic lives in `services/`, including the LLM integration layer. Database models are defined in `prisma/schema.prisma`.
+### Backend (Node.js + Fastify + TypeScript)
 
-**Frontend State Management** — Global theme state uses Svelte 5's modern runes in `theme.svelte.ts`. The `api.ts` module provides a typed Fetch wrapper with built-in error interception and handling.
+-  **Fastify**: Chosen over Express for better performance and lower overhead.
+-  **Service Layer Pattern**: Separated `routes/` (HTTP handling) from `services/` (Business Logic/LLM). This makes it easy to swap out the LLM provider later or add new channels (WhatsApp, IG) without rewriting the API layer.
+-  **Zod Validation**: Every endpoint validates inputs strictly. We don't trust the client.
+-  **Double Persistence Strategy**:
 
+1.  **Redis (Cache)**: Used for extremely fast session checks and "hot" history retrieval. It keeps the chat feeling instant on reloads.
+2.  **PostgreSQL (Source of Truth)**: Every message is strictly logged for audit trails and long-term storage.
+
+### Frontend (SvelteKit + Tailwind)
+
+-  **Svelte 5 Runes**: Used for simple, reactive global state management (Themes, Session ID).
+-  **Optimistic UI**: Messages appear instantly while the backend processes, making the app feel snappier.
+-  **Resiliency**: Handles network errors gracefully with toast notifications instead of silent failures.  
+
+### LLM Integration
+
+-  **Provider**: Google Gemini (`gemini-2.5-flash`) via `@google/genai`.
+-  **Why Flash?**: It offers the best balance of extremely low latency (critical for chat) and sufficient reasoning capability for support tasks.
+-  **Prompt Engineering**: The system prompt is "hard-bounded." I explicitly instruct it *what it knows* (Shipping, Returns) and *what it doesn't*, reducing hallucinations.
+-  **Context Window**: We slide the context window (last 10 messages) to keep costs low and responses relevant.
 ---
 
-## 🌐 Deploying to Production
+## 🔮 Trade-offs & "If I had more time..."
 
-**Database Setup**
+1.  **Security & Auth**:
 
-For **PostgreSQL**, provision a managed instance from Neon.tech or Supabase. For **Redis**, Upstash offers a generous free tier perfect for session storage.
+*  *Current*: Anonymous sessions via UUID stored in `sessionStorage`.
+*  *Upgrade*: I would implement **IP Fingerprinting** to bind sessions to device IPs or use **Signed HTTP-only cookies** to prevent session hijacking.
+  
 
-**Backend Deployment**
+2.  **Streaming Responses**:
 
-Deploy the `server` directory to Render, Railway, or your preferred Node.js host. Configure these environment variables in your hosting dashboard:
+*  *Current*: Waits for full generation (simplest to implement reliably).
+*  *Upgrade*: Implement **Server-Sent Events (SSE)** to stream tokens byte-by-byte for a "live typing" feel.  
 
-- `DATABASE_URL` — Your Postgres connection string
-- `REDIS_URL` — Your Redis connection string  
-- `GEMINI_API_KEY` — Your Google AI API key
+3.  **RAG (Retrieval-Augmented Generation)**:
 
-Set the start command to `pnpm start` and ensure your build script runs TypeScript compilation.
+*  *Current*: Policies are hardcoded in the system prompt.
+*  *Upgrade*: Integrate `pgvector` to dynamically pull relevant help articles (e.g., "How do I return a shirt?") into the context, allowing the knowledge base to grow without changing code.  
 
-**Frontend Deployment**
+4.  **Admin Dashboard**:
 
-Deploy the `frontend` directory to Vercel, Netlify, or Cloudflare Pages. Set one environment variable:
-
-- `PUBLIC_API_BASE_URL` — Your backend URL (e.g., `https://my-api.onrender.com`)
-
-The build command should be `pnpm build` with the output directory set to `build/`.
-
+* A simple view for support agents to take over conversations when the AI gets stuck.
 ---
 
-## 🧠 Architecture & Design Notes
+## 📂 Project Structure
 
-### Backend Structure
-- **Service-Oriented**: Core logic (LLM, DB) is separated into `services/` to keep `routes/` clean and focused on HTTP handling.
-- **Validation First**: Every endpoint uses Zod schemas to validate input before processing, preventing "garbage in" and checking limits early.
-- **Dual-Layer Persistence**: 
-  - **Redis** handles high-speed, short-term session state (is the user active? cached history).
-  - **PostgreSQL** handles long-term, reliable storage of every message for audit and analytics.
-
-### LLM Implementation
-- **Provider**: Google Gemini (`gemini-2.5-flash`) via the new `@google/genai` SDK.
-- **Optimization**: We use the Flash model for extremely low latency, which is critical for chat interfaces.
-- **Context Management**: The backend manages a sliding window of the last 10 messages to maintain context without overflowing token limits or slowing down responses.
-- **Prompting**: A robust System Prompt defines the persona ("Spur Support") and strictly bounds the knowledge to Shipping, Returns, and Products to prevent hallucinations.
-
----
-
-## 🔮 Trade-offs & Future Improvements
-
-**If I had more time...**
-
-1.  **Strict Security & Auth**: 
-    Currently, sessions are anonymous and secured only by the random UUID. Security could be significantly improved by:
-    -   Implementing **IP Fingerprinting** (binding sessions to IP addresses).
-    -   Moving from `sessionStorage` to **Signed, HttpOnly Cookies**.
-    -   Adding a proper user authentication layer (Login/Signup).
-
-2.  **Streaming Responses**: 
-    The current implementation waits for the full AI response before sending it. Implementing **Server-Sent Events (SSE)** or **WebSocket streaming** would make the chat feel much more alive and faster.
-
-3.  **RAG Integration**: 
-    Instead of hardcoding policies in the prompt, I would integrate a Vector Database (like pgvector) to dynamically retrieve specific help articles based on the user's query.
-
-4.  **Admin Dashboard**: 
-    A simple admin view to see live chats, take over conversations from the AI, and view usage statistics.
+```
+spur-chat-test/
+├── server/
+│ ├── src/
+│ │ ├── routes/ # API Endpoints (Chat, History)
+│ │ ├── services/ # Business Logic (LLM Wrapper)
+│ │ └── index.ts # Entry point
+│ └── prisma/ # DB Schema
+|
+└── frontend/
+| └── src/
+|   ├── routes/ # Svelte Pages
+|   └── lib/ # Shared Utilities (API client, Theme store)
+|
+└── docker-compose.yml
+```
