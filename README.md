@@ -123,6 +123,38 @@ The build command should be `pnpm build` with the output directory set to `build
 
 ---
 
-## 💡 Design Philosophy
+## 🧠 Architecture & Design Notes
 
-This project embraces being "boring but robust." Instead of chasing trends, it focuses on patterns that work reliably at scale: proper validation, defensive programming, clear error messages, and thoughtful rate limiting. The result is a chat agent you can deploy with confidence, knowing it will handle edge cases gracefully and keep working when users need it most.
+### Backend Structure
+- **Service-Oriented**: Core logic (LLM, DB) is separated into `services/` to keep `routes/` clean and focused on HTTP handling.
+- **Validation First**: Every endpoint uses Zod schemas to validate input before processing, preventing "garbage in" and checking limits early.
+- **Dual-Layer Persistence**: 
+  - **Redis** handles high-speed, short-term session state (is the user active? cached history).
+  - **PostgreSQL** handles long-term, reliable storage of every message for audit and analytics.
+
+### LLM Implementation
+- **Provider**: Google Gemini (`gemini-2.5-flash`) via the new `@google/genai` SDK.
+- **Optimization**: We use the Flash model for extremely low latency, which is critical for chat interfaces.
+- **Context Management**: The backend manages a sliding window of the last 10 messages to maintain context without overflowing token limits or slowing down responses.
+- **Prompting**: A robust System Prompt defines the persona ("Spur Support") and strictly bounds the knowledge to Shipping, Returns, and Products to prevent hallucinations.
+
+---
+
+## 🔮 Trade-offs & Future Improvements
+
+**If I had more time...**
+
+1.  **Strict Security & Auth**: 
+    Currently, sessions are anonymous and secured only by the random UUID. Security could be significantly improved by:
+    -   Implementing **IP Fingerprinting** (binding sessions to IP addresses).
+    -   Moving from `sessionStorage` to **Signed, HttpOnly Cookies**.
+    -   Adding a proper user authentication layer (Login/Signup).
+
+2.  **Streaming Responses**: 
+    The current implementation waits for the full AI response before sending it. Implementing **Server-Sent Events (SSE)** or **WebSocket streaming** would make the chat feel much more alive and faster.
+
+3.  **RAG Integration**: 
+    Instead of hardcoding policies in the prompt, I would integrate a Vector Database (like pgvector) to dynamically retrieve specific help articles based on the user's query.
+
+4.  **Admin Dashboard**: 
+    A simple admin view to see live chats, take over conversations from the AI, and view usage statistics.
