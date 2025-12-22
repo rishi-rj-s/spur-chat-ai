@@ -23,7 +23,7 @@ Do not invent policies.
 export async function generateReply(history: { role: "user" | "model"; parts: string }[], newMessage: string) {
     try {
         const chat = genAI.chats.create({
-            model: "gemini-2.5-flash",
+            model: "gemini-2.5-flash-lite",
             history: [
                 {
                     role: "user",

@@ -1,8 +1,8 @@
 <script lang="ts">
   import { onMount, tick } from 'svelte';
   import { api, ApiError } from '$lib/api';
-  import toast, { Toaster } from 'svelte-french-toast';
-  import { X, Send, Bot, User, Loader2, Palette, Plus } from 'lucide-svelte';
+  import { Toaster } from 'svelte-french-toast';
+  import { Send, Bot, User, LoaderCircle, Palette, Plus } from 'lucide-svelte';
   import { fade, fly } from 'svelte/transition';
   import { theme, themes } from '$lib/theme.svelte';
   import { showToast } from '$lib/utils/toast';
@@ -11,7 +11,7 @@
   let input = '';
   let loading = false;
   let sessionId = '';
-  let viewport: HTMLDivElement;
+  let viewport: HTMLElement;
   let inputElement: HTMLInputElement;
   let showThemes = false;
   let isOnline = false; // Start offline, wait for health check
@@ -20,57 +20,67 @@
   $: currentTheme = themes[$theme];
 
   onMount(async () => {
-   // Initial health check
-   checkHealth();
-   
-   // Persist theme
+   // 1. Load Theme immediately (prevent flash)
    const storedTheme = sessionStorage.getItem('spur_theme');
+   // Validation: Prevent tampering by checking against valid themes
    if (storedTheme && Object.keys(themes).includes(storedTheme)) {
        theme.set(storedTheme as any);
    }
-
    theme.subscribe(v => sessionStorage.setItem('spur_theme', v));
 
-   // Session Management
-   let stored = sessionStorage.getItem('spur_session_id');
-   
-   if (stored) {
+   // 2. Parallel Initialization (Health + History)
+   // We don't wait for health to start fetching history (optimistic load)
+   const historyPromise = (async () => {
+       const stored = sessionStorage.getItem('spur_session_id');
+       if (!stored) return;
+
        sessionId = stored;
-       // Fetch history if session existed
        try {
            const res = await api.get<{ messages: any[] }>('/chat/history/' + sessionId);
            if (res.messages && res.messages.length > 0) {
-               // API returns newest first, reverse for display
                messages = res.messages.reverse().map(m => ({
                    id: m.id,
-                   role: m.role === 'model' ? 'ai' : m.role, // normalize role
+                   role: m.role === 'model' ? 'ai' : m.role,
                    content: m.content
                }));
                scrollToBottom();
            }
+           // If history fetch succeeds, we know we are online!
+           isOnline = true;
        } catch (err) {
-           console.error("Failed to load history", err);
-           // If history load fails, likely offline
-           isOnline = false;
+           if (err instanceof ApiError && (err.status === 404 || err.status === 400)) {
+               console.warn("Session invalid, starting fresh.");
+               sessionStorage.removeItem('spur_session_id');
+               sessionId = '';
+               showToast('Starting a new session');
+           } else {
+                console.error("Failed to load history", err);
+                isOnline = false;
+           }
        }
-   }
+   })();
+
+   // Fire health check in background (updates UI status)
+   const healthPromise = checkHealth(false, false); // Don't toast error here, let history fetch fail if needed
+
+   await Promise.allSettled([historyPromise, healthPromise]);
 
    // Auto-focus input on load
    if (inputElement) inputElement.focus();
   });
 
-  async function checkHealth(silentSuccess = false, reportFailure = false) {
+  async function checkHealth(silentSuccess = false, reportFailure = false): Promise<boolean> {
       try {
           await api.get('/');
           if (!isOnline && !silentSuccess) {
               showToast('Support is Online', 'success');
           }
           isOnline = true;
+          return true;
       } catch (e) {
           isOnline = false;
-          if (reportFailure) {
-              showToast('Connection Failed', 'error');
-          }
+          // api.ts handles the toast notification for network errors
+          return false;
       }
   }
 
@@ -104,7 +114,18 @@
         return;
     }
 
+    // Prevent spamming (Client-side throttle)
+    if (loading) return; 
+
     const text = input.trim();
+    if (!text || text.length > 250) return;
+
+    // 1-second debounce/cool-down to prevent accidental double sends
+    if (Date.now() - lastErrorTime < 1000) return; 
+    
+    // Update timestamp for "last action"
+    lastErrorTime = Date.now();
+
     input = '';
     
     // Optimistic UI
@@ -138,6 +159,16 @@
        // Handle API errors
         if (err instanceof ApiError && err.status === 403) {
             // Optional: disable input
+        } else if (err instanceof ApiError && err.status === 400) {
+             // Invalid Session ID (Tampered). Clear it and retry? 
+             // Ideally we just clear it and ask user to try again, or auto-retry.
+             // Let's clear it and let them hit send again (or auto-retry if you want to be fancy, but simple is robust)
+             console.warn("Invalid session during send, clearing.");
+             sessionStorage.removeItem('spur_session_id');
+             sessionId = '';
+             showToast('Session invalid, starting new chat');
+             // Optionally: we could auto-retry here by calling sendMessage() recursively once, 
+             // but that risks infinite loops if not careful. Let's stick to "Reset & User Retries" for safety.
         } else {
             isOnline = false; // API failed, likely offline
             if (Date.now() - lastErrorTime > 2000) {
@@ -247,7 +278,7 @@
   </header>
 
   <!-- Chat Area -->
-  <div bind:this={viewport} class="flex-1 overflow-y-auto p-4 space-y-6 scroll-smooth">
+  <main bind:this={viewport} class="flex-1 overflow-y-auto p-4 space-y-6 scroll-smooth">
     {#if messages.length === 0}
       <div class="h-full flex flex-col items-center justify-center opacity-50 space-y-4">
         <Bot class="w-16 h-16" />
@@ -284,7 +315,7 @@
         </div>
       </div>
     {/if}
-  </div>
+  </main>
 
   <!-- Input Area -->
   <div class="p-4 {currentTheme.inputArea} transition-colors duration-300">
@@ -312,13 +343,15 @@
       <button
         on:click={sendMessage}
         disabled={!input.trim() || loading}
+        aria-label="Send Message"
         class="bg-indigo-600 hover:bg-indigo-700 disabled:bg-gray-400 text-white rounded-xl px-4 flex items-center justify-center transition-all disabled:cursor-not-allowed shadow-md"
       >
-        {#if loading} <Loader2 class="w-5 h-5 animate-spin" /> {:else} <Send class="w-5 h-5" /> {/if}
+        {#if loading} <LoaderCircle class="w-5 h-5 animate-spin" /> {:else} <Send class="w-5 h-5" /> {/if}
       </button>
     </div>
-    <div class="text-center mt-2">
+    <div class="text-center mt-2 flex flex-col items-center gap-1">
         <span class="text-[10px] opacity-60">AI can make mistakes. Please check important info.</span>
+        <a href="https://github.com/rishi-rj-s" target="_blank" class="text-[10px] opacity-40 hover:opacity-100 transition-opacity">Built by Rishi</a>
     </div>
   </div>
 </div>

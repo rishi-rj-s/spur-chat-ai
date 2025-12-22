@@ -1,7 +1,7 @@
 import toast from 'svelte-french-toast';
 import ToastMessage from '$lib/components/ToastMessage.svelte';
 
-export function showToast(message: string, type: 'success' | 'error' = 'success') {
+export function showToast(message: string, type: 'success' | 'error' | 'warning' = 'success') {
     // Clear previous toasts
     toast.dismiss();
 

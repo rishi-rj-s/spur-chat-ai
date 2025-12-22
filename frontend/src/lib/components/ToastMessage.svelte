@@ -1,9 +1,9 @@
 <script lang="ts">
   import toastLib from 'svelte-french-toast';
-  import { X, CheckCircle2, AlertCircle } from 'lucide-svelte';
+  import { CircleCheck, CircleX, TriangleAlert } from 'lucide-svelte';
 
-  export let message: string = '';
-  export let type: 'success' | 'error' = 'success';
+  export let message: string | undefined = undefined;
+  export let type: 'success' | 'error' | 'warning' | undefined = undefined;
   export let toast: any = {};
   
   // Fallback for props passed via `toast(Comp, { data: { ... } })`
@@ -21,9 +21,11 @@
   <!-- Icon Section -->
   <div class="flex-shrink-0">
     {#if resolvedType === 'success'}
-      <CheckCircle2 class="w-5 h-5 text-green-500" />
+      <CircleCheck class="w-5 h-5 text-green-500" />
+    {:else if resolvedType === 'warning'}
+      <TriangleAlert class="w-5 h-5 text-yellow-500" />
     {:else}
-      <AlertCircle class="w-5 h-5 text-red-500" />
+      <CircleX class="w-5 h-5 text-red-500" />
     {/if}
   </div>
 

@@ -1,8 +1,10 @@
 import Fastify from "fastify";
 import cors from "@fastify/cors";
+import rateLimit from "@fastify/rate-limit";
 import dotenv from "dotenv";
 import { chatRoutes } from "./routes/chat";
 import { historyRoutes } from "./routes/history";
+import { redis } from "./lib/redis";
 
 dotenv.config();
 
@@ -11,9 +13,21 @@ const server = Fastify({
 });
 
 server.register(cors, {
-    origin: "http://localhost:5173",
+    origin: ["http://localhost:5173", process.env.FRONTEND_URL || ""].filter(Boolean),
 });
 
+server.register(rateLimit, {
+    max: 30,
+    timeWindow: '1 minute',
+    redis: redis,
+    errorResponseBuilder: (request, context) => {
+        return {
+            statusCode: 429,
+            error: "Too Many Requests",
+            message: `You are sending messages too fast. Please wait ${Math.ceil(context.ttl / 1000)} seconds.`
+        };
+    }
+});
 server.register(chatRoutes, { prefix: "/chat" });
 server.register(historyRoutes, { prefix: "/chat" });
 

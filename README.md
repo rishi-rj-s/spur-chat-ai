@@ -102,7 +102,7 @@ My design philosophy for this task was **"Robustness First."** I wanted to build
 
 ### LLM Integration
 
--  **Provider**: Google Gemini (`gemini-2.5-flash`) via `@google/genai`.
+-  **Provider**: Google Gemini (`gemini-2.5-flash-lite`) via `@google/genai`.
 -  **Why Flash?**: It offers the best balance of extremely low latency (critical for chat) and sufficient reasoning capability for support tasks.
 -  **Prompt Engineering**: The system prompt is "hard-bounded." I explicitly instruct it *what it knows* (Shipping, Returns) and *what it doesn't*, reducing hallucinations.
 -  **Context Window**: We slide the context window (last 10 messages) to keep costs low and responses relevant.
