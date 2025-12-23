@@ -188,7 +188,9 @@
   function handleKeydown(e: KeyboardEvent) {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
-      sendMessage();
+      if (!loading) {
+          sendMessage();
+      }
     }
   }
 </script>
@@ -327,7 +329,6 @@
             bind:this={inputElement}
             bind:value={input}
             on:keydown={handleKeydown}
-            disabled={loading}
             type="text"
             placeholder="Type a message..."
             maxlength="250"

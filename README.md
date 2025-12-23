@@ -106,6 +106,14 @@ My design philosophy for this task was **"Robustness First."** I wanted to build
 -  **Why Flash?**: It offers the best balance of extremely low latency (critical for chat) and sufficient reasoning capability for support tasks.
 -  **Prompt Engineering**: The system prompt is "hard-bounded." I explicitly instruct it *what it knows* (Shipping, Returns) and *what it doesn't*, reducing hallucinations.
 -  **Context Window**: We slide the context window (last 10 messages) to keep costs low and responses relevant.
+
+### Concurrency & Safety Strategies
+
+-   **Redis Mutex Locking**: To prevent race conditions (e.g., user double-clicking "Send"), I implemented a strict **Session Lock**. If a request arrives while one is processing for the same session, it returns `429 Too Many Requests`.
+-   **Rate Limiting**:
+    -   **Backend**: `@fastify/rate-limit` + Redis enforces a strict **30 requests/minute** cap per IP to prevent abuse.
+    -   **Frontend**: Client-side throttling (1s debounce) provides immediate feedback before even hitting the network.
+-   **Graceful Recovery**: If a session ID becomes invalid (tampered or expired), the frontend automatically detects the specific `400/404` error, wipes the bad session, and transparently starts a new chat.
 ---
 
 ## 🔮 Trade-offs & "If I had more time..."
